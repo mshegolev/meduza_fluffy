@@ -1,0 +1,19 @@
+[Unit]
+Description=Meduza Fluffy Service
+After=network.target
+
+[Service]
+User=user1
+Group=user1
+WorkingDirectory=/opt/develop/meduza_fluffy
+#ExecStart=/opt/develop/meduza_fluffy/meduza_fluffy
+ExecStart=meduza_fluffy
+Restart=always
+StandardOutput=append:/opt/develop/meduza_fluffy/meduza_fluffy.log
+StandardError=append:/opt/develop/meduza_fluffy/meduza_fluffy.log
+TimeoutStartSec=1min
+RestartSec=1min
+
+[Install]
+WantedBy=multi-user.target
+
