@@ -1,14 +1,14 @@
 #!/usr/bin/python3
-import os
-from telegram import Update
-from telegram.ext import CommandHandler, Application
+import json
 import logging
-import time
-import urllib
-import requests
+import os
 import signal
 import sys
-import json
+import time
+
+import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler
 
 logging.basicConfig(
     filename="meduza_fluffy.log",
@@ -20,16 +20,38 @@ global logger
 logger = logging.getLogger(__name__)
 
 
-config_path = os.path.join(os.path.abspath("."), "config.json")
-with open(config_path, "r") as f:
-    config = json.load(f)
+class Config:
+    __slots__ = ["TG_TOKEN", "N_LOGIN", "N_PASSWORD", "CURRENT_HW", "config_path", "__dict__"]
+
+    def __init__(self, filename="config.json"):
+        self.config_path = os.path.join(os.path.abspath("."), filename)
+        self.__dict__ = self.load(self.config_path)
+        for k, v in self.__dict__.items():
+            setattr(self, k, v)
+
+    def get(self, param):
+        return getattr(self, param, None)
+
+    def save(self, param):
+        with open(self.config_path, "w", encoding="utf-8") as f:
+            json.dump(self.__dict__.items(), f, ensure_ascii=False)
+
+    @staticmethod
+    def load(config_path) -> dict:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        return config
+
+
+config = Config()
 
 TOKEN = config.get("TG_TOKEN")
 LOGIN = config.get("N_LOGIN")
 PASSWORD = config.get("N_PASSWORD")
+CURRENT_HW = config.get("CURRENT_HW")
 
 if not TOKEN or not LOGIN:
-    logger.fatal(f"Нет конфига для приложения: {config_path}")
+    logger.error(f"Нет конфига для приложения: {config.config_path}")
     exit(1)
 
 
@@ -56,9 +78,7 @@ async def send_ok(update, context):
     except Exception as e:
         logger.error(f"Ошибка при отправке сообщения: {e}")
         _is_error = True
-        await update.message.reply_text(
-            "Требуется повторно перезапустить метод возникла ошибка"
-        )
+        await update.message.reply_text("Требуется повторно перезапустить метод возникла ошибка")
 
 
 async def start(update, context):
@@ -89,6 +109,15 @@ class HomeChecker:
             "_ym_d": "1701789846",
             "_tt_enable_cookie": "1",
             "_ttp": "xDd0QIMqYDYCjD27utA9aosMlQE",
+            "gbid": "ecaf25ca-0395-42db-8901-7e3cc55c8523",
+            "_tm_lt_sid": "1703857444826.979422",
+            "advcake_utm_webmaster": "",
+            "advcake_click_id": "",
+            "gdeslon.ru.__arc_domain": "gdeslon.ru",
+            "analytic_id": "1707252509184433",
+            "_gcl_au": "1.1.729054790.1709567941",
+            "CookiesAgreementConfirmed": "1",
+            "g4c_x": "1",
             "gbid": "ecaf25ca-0395-42db-8901-7e3cc55c8523",
             "_tm_lt_sid": "1703857444826.979422",
             "advcake_utm_webmaster": "",
@@ -140,7 +169,7 @@ class HomeChecker:
         url = self.base_url + self.backend_api + url_unread
         return self._get(url)
 
-    def _get(url):
+    def _get(self, url):
         try:
             if not self.is_loggedin:
                 logger.info("Повторно авторизуемся")
@@ -152,9 +181,7 @@ class HomeChecker:
                 logger.info(f"получили ответ: {response.text}")
                 return response.json()
             else:
-                logger.error(
-                    f"Ошибка при выполнении запроса: {str(response.status_code)}"
-                )
+                logger.error(f"Ошибка при выполнении запроса: {str(response.status_code)}")
                 self.is_loggedin = False
                 return dict()
         except Exception as e:
@@ -164,9 +191,9 @@ class HomeChecker:
 
     def get_hw_name(self):
         _url = "/expert/homeworks?q%5Bevents_event_in%5D%5B%5D=to_rework&q%5Bevents_event_in%5D%5B%5D=accepted_with_awesome_score&q%5Bevents_event_in%5D%5B%5D=accepted_with_good_score&q%5Bevents_event_in%5D%5B%5D=accepted_with_bad_score&q%5Bevents_user_id_eq%5D=7059773&q%5Blesson_task_task_type_eq%5D=1&q%5Bs%5D=updated_at%20desc&q%5Bstatus_in%5D%5B%5D=0&q%5Bstatus_in%5D%5B%5D=2&q%5Bstatus_in%5D%5B%5D=3&q%5Bstatus_in%5D%5B%5D=4&q%5Bstatus_in%5D%5B%5D=5"
-
-    url = self.base_url + self.backend_api + _url
-    response = self._get(url)
+        url = self.base_url + self.backend_api + _url
+        response = self._get(url)
+        return response
 
 
 def sigterm_handler(signum, frame):
