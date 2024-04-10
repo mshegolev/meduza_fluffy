@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+stopapp.sh
 config.json
 *.log
 # C extensions

@@ -21,11 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 class Config:
-    __slots__ = ["TG_TOKEN", "N_LOGIN", "N_PASSWORD", "CURRENT_HW", "config_path", "__dict__"]
+    __slots__ = ["TG_TOKEN", "N_LOGIN", "N_PASSWORD", "HW_STATE", "config_path", "__dict__"]
 
     def __init__(self, filename="config.json"):
-        self.config_path = os.path.join(os.path.abspath("."), filename)
-        self.__dict__ = self.load(self.config_path)
+        config_path = os.path.join(os.path.abspath("."), filename)
+        logger.info(f"загружаем конфиг {config_path}")
+        self.__dict__ = self.load(config_path)
+        logger.debug(f"Конфиг загружен: {self.__dict__}")
+        self.config_path = config_path
         for k, v in self.__dict__.items():
             setattr(self, k, v)
 
@@ -36,6 +39,9 @@ class Config:
         with open(self.config_path, "w", encoding="utf-8") as f:
             json.dump(self.__dict__.items(), f, ensure_ascii=False)
 
+    def refresh(self):
+        self.config = self.load(self.config_path)
+
     @staticmethod
     def load(config_path) -> dict:
         with open(config_path, "r") as f:
@@ -43,21 +49,11 @@ class Config:
         return config
 
 
-config = Config()
-
-TOKEN = config.get("TG_TOKEN")
-LOGIN = config.get("N_LOGIN")
-PASSWORD = config.get("N_PASSWORD")
-CURRENT_HW = config.get("CURRENT_HW")
-
-if not TOKEN or not LOGIN:
-    logger.error(f"Нет конфига для приложения: {config.config_path}")
-    exit(1)
-
-
 async def send_ok(update, context):
     _rest_checked = 0
     _is_error = False
+    _start_hw_state = HC.config.HW_STATE
+    logger.info(f"Текущее состояние статусов из конфигурации: {_start_hw_state}")
     try:
         while True:
             time.sleep(60)
@@ -86,8 +82,10 @@ async def start(update, context):
 
 
 class HomeChecker:
-    def __init__(self, creds):
-        self.creds = creds
+    def __init__(self, config: Config):
+        self.config = config
+        self.creds = {"login": config.N_LOGIN, "password": config.N_PASSWORD, "remember": 1}
+        self.hw_state = {}
         self.base_url = "https://netology.ru"
         self.backend_api = "/backend/api"
         self.s = requests.Session()
@@ -163,6 +161,7 @@ class HomeChecker:
             logger.info("вы авторизовались успешно!")
         else:
             logger.error("вы не авторизованы!")
+            exit(1)
 
     def get_unread_hw(self):
         url_unread = "/expert/homeworks_tabs_count?q%5Blesson_task_task_type_eq%5D=1"
@@ -204,13 +203,18 @@ def sigterm_handler(signum, frame):
 
 def main():
     signal.signal(signal.SIGTERM, sigterm_handler)
+    config = Config()
+
+    if not config.TG_TOKEN or not config.N_LOGIN:
+        logger.error(f"Нет конфига для приложения: {config.config_path}")
+        exit(1)
+
     global application
-    application = Application.builder().token(TOKEN).build()
+    application = Application.builder().token(config.TG_TOKEN).build()
 
     global HC
-    creds = {"login": LOGIN, "password": PASSWORD, "remember": 1}
 
-    HC = HomeChecker(creds=creds)
+    HC = HomeChecker(config)
 
     application.add_handler(CommandHandler("send_ok", send_ok))
 
