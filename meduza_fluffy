@@ -50,7 +50,9 @@ class Config:
 
 
 async def send_ok(update, context):
-    _rest_checked = 0
+    _rest_checked_value = 0
+    WAITING_REVIEW = "waiting_review"
+    RESET_CHECKED = "reset_checked"
     _is_error = False
     _start_hw_state = HC.config.HW_STATE
     logger.info(f"Текущее состояние статусов из конфигурации: {_start_hw_state}")
@@ -63,13 +65,18 @@ async def send_ok(update, context):
                 logger.warn(msg)
                 await update.message.reply_text(msg)
                 _is_error = False
-            if r.get("waiting_review", 0) > 0:
+
+            if _start_hw_state.get(WAITING_REVIEW) != r.get(WAITING_REVIEW):
+                msg = f"Данные в файле config.json: {_start_hw_state} не совпадают с данными в системе: {r.get(WAITING_REVIEW)}"
+                logger.info(msg)
+
+            if r.get(WAITING_REVIEW, 0) > 0:
                 msg = f"Нужно проверить домашку! https://netology.ru/trainer/tasks  {str(r)}"
                 await update.message.reply_text(msg)
-            elif r.get("rest_checked", _rest_checked) > _rest_checked:
-                rest_checked = r.get("rest_checked")
-                msg = f"Кто то проверил еще одну домашку https://netology.ru/trainer/tasks  было {str(_rest_checked)} стало {str(rest_checked)}"
-                _rest_checked = rest_checked
+            elif r.get(RESET_CHECKED, _rest_checked_value) > _rest_checked_value:
+                rest_checked_value = r.get("rest_checked")
+                msg = f"Кто то проверил еще одну домашку https://netology.ru/trainer/tasks  было {str(_rest_checked_value)} стало {str(rest_checked_value)}"
+                _rest_checked_value = rest_checked_value
                 await update.message.reply_text(msg)
     except Exception as e:
         logger.error(f"Ошибка при отправке сообщения: {e}")
@@ -83,7 +90,7 @@ async def start(update, context):
 
 class HomeChecker:
     def __init__(self, config: Config):
-        self.config = config
+        self.config: Config = config
         self.creds = {"login": config.N_LOGIN, "password": config.N_PASSWORD, "remember": 1}
         self.hw_state = {}
         self.base_url = "https://netology.ru"
