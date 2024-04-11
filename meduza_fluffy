@@ -15,7 +15,7 @@ logging.basicConfig(
     filename="meduza_fluffy.log",
     filemode="a",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.DEBUG,
+    level=logging.INFO,
 )
 global logger
 
@@ -85,6 +85,7 @@ async def send_ok(update, context):
             if _start_hw_state.get(WAITING_REVIEW) != r.get(WAITING_REVIEW):
                 msg = f"Данные в файле config.json: {_start_hw_state.get(WAITING_REVIEW)} не совпадают с данными в системе: {r.get(WAITING_REVIEW)}"
                 logger.info(msg)
+                HC.config.HW_STATE = r
                 HC.config.save()  # type: ignore  # noqa
                 frequency_min = frequency_min * 2 if frequency_min < max_frequency else 20
             else:
