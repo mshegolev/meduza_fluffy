@@ -1,64 +1,107 @@
 #!/usr/bin/python3
-import os
-from telegram import Update
-from telegram.ext import CommandHandler, Application
+import json
 import logging
-import time
-import urllib
-import requests
+import os
 import signal
 import sys
-import json
+import time
+from typing import Dict, MutableMapping
+
+import requests
+from telegram import Update
+from telegram.ext import Application, CommandHandler
 
 logging.basicConfig(
     filename="meduza_fluffy.log",
     filemode="a",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=logging.DEBUG,
 )
 global logger
+
 logger = logging.getLogger(__name__)
+ONE_MINUTE = 60
 
 
-config_path = os.path.join(os.path.abspath("."), "config.json")
-with open(config_path, "r") as f:
-    config = json.load(f)
+class Config:
+    __slots__ = ["TG_TOKEN", "N_LOGIN", "N_PASSWORD", "HW_STATE", "config_path", "__dict__"]
 
-TOKEN = config.get("TG_TOKEN")
-LOGIN = config.get("N_LOGIN")
-PASSWORD = config.get("N_PASSWORD")
+    def __init__(self, filename="config.json"):
+        config_path = os.path.join(os.path.abspath("."), filename)
+        logger.info(f"загружаем конфиг {config_path}")
+        # self.__dict__ = self.load(config_path)
+        logger.debug(f"Конфиг загружен: {self.__dict__}")
+        self.config_path = config_path
+        for k, v in self.load(config_path).items():
+            setattr(self, k, v)
 
-if not TOKEN or not LOGIN:
-    logger.fatal(f"Нет конфига для приложения: {config_path}")
-    exit(1)
+    def get(self, param):
+        return getattr(self, param, None)
 
+    def save(self):
+        logger.info("Обновляем файл конфигурации")
+        _dict_ = {}
+        for param in [x for x in self.__slots__ if not x.startswith("_")]:
+            _dict_[param] = self.get(param)
+
+        logger.debug(f"Save config: {_dict_}")
+        with open(self.config_path, "w", encoding="utf-8") as f:
+            json.dump(_dict_, f, ensure_ascii=False)
+        logger.info("saved successfull")
+
+    def refresh(self):
+        for k, v in self.load(self.config_path).items():
+            setattr(self, k, v)
+        return self
+
+    @staticmethod
+    def load(config_path) -> dict:
+        logger.info(f"Перезагружаем данные из конфига {config_path}")
+        with open(config_path, "r") as f:
+            config = json.load(f)
+        return config
 
 async def send_ok(update, context):
-    _rest_checked = 0
+    _rest_checked_value = 0
+    frequency_min = 5 * ONE_MINUTE
+    max_frequency = 30 * ONE_MINUTE
+    WAITING_REVIEW = "waiting_review"
+    RESET_CHECKED = "reset_checked"
     _is_error = False
+    HC.config.refresh()  # type: ignore  # noqa
+    _start_hw_state = HC.config.HW_STATE  # type: ignore  # noqa
+    logger.info(f"Текущее состояние статусов из конфигурации: {_start_hw_state}")
     try:
         while True:
-            time.sleep(60)
-            r = HC.get_unread_hw()
+            logger.info(f"текущий таймаут между проверками {frequency_min}")
+            time.sleep(frequency_min)
+            r = HC.get_unread_hw()  # type: ignore  # noqa
             if _is_error:
                 msg = "Продолжаем работать после возникновения ошибки."
                 logger.warn(msg)
                 await update.message.reply_text(msg)
                 _is_error = False
-            if r.get("waiting_review", 0) > 0:
+
+            if _start_hw_state.get(WAITING_REVIEW) != r.get(WAITING_REVIEW):
+                msg = f"Данные в файле config.json: {_start_hw_state.get(WAITING_REVIEW)} не совпадают с данными в системе: {r.get(WAITING_REVIEW)}"
+                logger.info(msg)
+                HC.config.save()  # type: ignore  # noqa
+                frequency_min = frequency_min * 2 if frequency_min < max_frequency else 20
+            else:
+                frequency_min = 5 * ONE_MINUTE
+
+            if r.get(WAITING_REVIEW, 0) > 0:
                 msg = f"Нужно проверить домашку! https://netology.ru/trainer/tasks  {str(r)}"
                 await update.message.reply_text(msg)
-            elif r.get("rest_checked", _rest_checked) > _rest_checked:
-                rest_checked = r.get("rest_checked")
-                msg = f"Кто то проверил еще одну домашку https://netology.ru/trainer/tasks  было {str(_rest_checked)} стало {str(rest_checked)}"
-                _rest_checked = rest_checked
+            elif r.get(RESET_CHECKED, _rest_checked_value) > _rest_checked_value:
+                rest_checked_value = r.get("rest_checked")
+                msg = f"Кто то проверил еще одну домашку https://netology.ru/trainer/tasks  было {str(_rest_checked_value)} стало {str(rest_checked_value)}"
+                _rest_checked_value = rest_checked_value
                 await update.message.reply_text(msg)
     except Exception as e:
         logger.error(f"Ошибка при отправке сообщения: {e}")
         _is_error = True
-        await update.message.reply_text(
-            "Требуется повторно перезапустить метод возникла ошибка"
-        )
+        await update.message.reply_text("Требуется повторно перезапустить метод возникла ошибка")
 
 
 async def start(update, context):
@@ -66,13 +109,15 @@ async def start(update, context):
 
 
 class HomeChecker:
-    def __init__(self, creds):
-        self.creds = creds
+    def __init__(self, config: Config):
+        self.config: Config = config
+        self.creds = {"login": config.get("N_LOGIN"), "password": config.get("N_PASSWORD"), "remember": 1}
+        self.hw_state: Dict[str, int] = {}
         self.base_url = "https://netology.ru"
         self.backend_api = "/backend/api"
         self.s = requests.Session()
         self.is_loggedin = False
-        self.headers = {
+        self.headers: MutableMapping[str, str | bytes] = {
             "authority": "netology.ru",
             "pragma": "no-cache",
             "cache-control": "no-cache",
@@ -89,6 +134,15 @@ class HomeChecker:
             "_ym_d": "1701789846",
             "_tt_enable_cookie": "1",
             "_ttp": "xDd0QIMqYDYCjD27utA9aosMlQE",
+            "gbid": "ecaf25ca-0395-42db-8901-7e3cc55c8523",
+            "_tm_lt_sid": "1703857444826.979422",
+            "advcake_utm_webmaster": "",
+            "advcake_click_id": "",
+            "gdeslon.ru.__arc_domain": "gdeslon.ru",
+            "analytic_id": "1707252509184433",
+            "_gcl_au": "1.1.729054790.1709567941",
+            "CookiesAgreementConfirmed": "1",
+            "g4c_x": "1",
             "gbid": "ecaf25ca-0395-42db-8901-7e3cc55c8523",
             "_tm_lt_sid": "1703857444826.979422",
             "advcake_utm_webmaster": "",
@@ -134,13 +188,14 @@ class HomeChecker:
             logger.info("вы авторизовались успешно!")
         else:
             logger.error("вы не авторизованы!")
+            exit(1)
 
     def get_unread_hw(self):
         url_unread = "/expert/homeworks_tabs_count?q%5Blesson_task_task_type_eq%5D=1"
         url = self.base_url + self.backend_api + url_unread
         return self._get(url)
 
-    def _get(url):
+    def _get(self, url):
         try:
             if not self.is_loggedin:
                 logger.info("Повторно авторизуемся")
@@ -152,9 +207,7 @@ class HomeChecker:
                 logger.info(f"получили ответ: {response.text}")
                 return response.json()
             else:
-                logger.error(
-                    f"Ошибка при выполнении запроса: {str(response.status_code)}"
-                )
+                logger.error(f"Ошибка при выполнении запроса: {str(response.status_code)}")
                 self.is_loggedin = False
                 return dict()
         except Exception as e:
@@ -164,26 +217,30 @@ class HomeChecker:
 
     def get_hw_name(self):
         _url = "/expert/homeworks?q%5Bevents_event_in%5D%5B%5D=to_rework&q%5Bevents_event_in%5D%5B%5D=accepted_with_awesome_score&q%5Bevents_event_in%5D%5B%5D=accepted_with_good_score&q%5Bevents_event_in%5D%5B%5D=accepted_with_bad_score&q%5Bevents_user_id_eq%5D=7059773&q%5Blesson_task_task_type_eq%5D=1&q%5Bs%5D=updated_at%20desc&q%5Bstatus_in%5D%5B%5D=0&q%5Bstatus_in%5D%5B%5D=2&q%5Bstatus_in%5D%5B%5D=3&q%5Bstatus_in%5D%5B%5D=4&q%5Bstatus_in%5D%5B%5D=5"
-
-    url = self.base_url + self.backend_api + _url
-    response = self._get(url)
+        url = self.base_url + self.backend_api + _url
+        response = self._get(url)
+        return response
 
 
 def sigterm_handler(signum, frame):
     logger.info("Получен сигнал SIGTERM. Выполняется завершение работы...")
-    application.stop()
+    application.stop()  # type: ignore  # noqa
     sys.exit(0)
 
 
 def main():
     signal.signal(signal.SIGTERM, sigterm_handler)
+    config = Config()
     global application
-    application = Application.builder().token(TOKEN).build()
-
     global HC
-    creds = {"login": LOGIN, "password": PASSWORD, "remember": 1}
 
-    HC = HomeChecker(creds=creds)
+    if not config.get("TG_TOKEN") or not config.get("N_LOGIN"):
+        logger.error(f"Нет конфига для приложения: {config.config_path}")
+        exit(1)
+
+    application = Application.builder().token(config.get("TG_TOKEN")).build()
+
+    HC = HomeChecker(config)  # type: ignore  # noqa
 
     application.add_handler(CommandHandler("send_ok", send_ok))
 

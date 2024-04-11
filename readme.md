@@ -1,4 +1,7 @@
 ##### meduza_fluffy
+examples:
+https://github.com/python-telegram-bot/python-telegram-bot/blob/master/examples/timerbot.py
+
 how to install
 1. download project 
 
@@ -10,7 +13,8 @@ cd meduza_fluffy
 2. create config file
 
 ```
-echo '{"TG_TOKEN":"6503:AAE", "N_LOGIN":"login", "N_PASSWORD":"password"}' > config.json
+echo '{"TG_TOKEN":"6503:AAE", "N_LOGIN":"login", "N_PASSWORD":"password", "CURRENT_HW":0}' > config.json
+touch meduza_fluffy.log
 ```
 
 3. enable service and run it.

@@ -3,7 +3,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+*.swp
+rt.sh
+stopapp.sh
 config.json
+config.json.bkp
 *.log
 # C extensions
 *.so
