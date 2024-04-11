@@ -28,7 +28,7 @@ class Config:
 
     def __init__(self, filename="config.json"):
         config_path = os.path.join(os.path.abspath("."), filename)
-        if os.path.isfile(config_path):
+        if not os.path.isfile(config_path):
             raise NameError("Установи конфиг")
             exit(1)
 
