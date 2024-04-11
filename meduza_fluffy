@@ -15,7 +15,7 @@ logging.basicConfig(
     filename="meduza_fluffy.log",
     filemode="a",
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO,
+    level=logging.DEBUG,
 )
 global logger
 
@@ -29,38 +29,42 @@ class Config:
     def __init__(self, filename="config.json"):
         config_path = os.path.join(os.path.abspath("."), filename)
         logger.info(f"загружаем конфиг {config_path}")
-        self.__dict__ = self.load(config_path)
+        # self.__dict__ = self.load(config_path)
         logger.debug(f"Конфиг загружен: {self.__dict__}")
         self.config_path = config_path
-        for k, v in self.__dict__.items():
+        for k, v in self.load(config_path).items():
             setattr(self, k, v)
 
     def get(self, param):
         return getattr(self, param, None)
 
     def save(self):
-        config_json = self.__dict__
-        logger.debug(f"Save config: {config_json}")
+        logger.info("Обновляем файл конфигурации")
+        _dict_ = {}
+        for param in [x for x in self.__slots__ if not x.startswith("_")]:
+            _dict_[param] = self.get(param)
+
+        logger.debug(f"Save config: {_dict_}")
         with open(self.config_path, "w", encoding="utf-8") as f:
-            json.dump(self.__dict__.items(), f, ensure_ascii=False)
+            json.dump(_dict_, f, ensure_ascii=False)
+        logger.info("saved successfull")
 
     def refresh(self):
-        self.config = self.load(self.config_path)
-        for k, v in self.__dict__.items():
+        for k, v in self.load(self.config_path).items():
             setattr(self, k, v)
         return self
 
     @staticmethod
     def load(config_path) -> dict:
-        logger.info(f'Перезагружаем данные из конфига {config_path}')
+        logger.info(f"Перезагружаем данные из конфига {config_path}")
         with open(config_path, "r") as f:
             config = json.load(f)
         return config
 
-
 async def send_ok(update, context):
     _rest_checked_value = 0
-    frequency_min = 1 * ONE_MINUTE
+    frequency_min = 5 * ONE_MINUTE
+    max_frequency = 30
     WAITING_REVIEW = "waiting_review"
     RESET_CHECKED = "reset_checked"
     _is_error = False
@@ -69,6 +73,7 @@ async def send_ok(update, context):
     logger.info(f"Текущее состояние статусов из конфигурации: {_start_hw_state}")
     try:
         while True:
+            logger.info(f"текущий таймаут между проверками {frequency_min}")
             time.sleep(frequency_min)
             r = HC.get_unread_hw()  # type: ignore  # noqa
             if _is_error:
@@ -78,9 +83,12 @@ async def send_ok(update, context):
                 _is_error = False
 
             if _start_hw_state.get(WAITING_REVIEW) != r.get(WAITING_REVIEW):
-                msg = f"Данные в файле config.json: {_start_hw_state} не совпадают с данными в системе: {r.get(WAITING_REVIEW)}"
+                msg = f"Данные в файле config.json: {_start_hw_state.get(WAITING_REVIEW)} не совпадают с данными в системе: {r.get(WAITING_REVIEW)}"
                 logger.info(msg)
                 HC.config.save()  # type: ignore  # noqa
+                frequency_min = frequency_min * 2 if frequency_min < max_frequency else 20
+            else:
+                frequency_min = 5 * ONE_MINUTE
 
             if r.get(WAITING_REVIEW, 0) > 0:
                 msg = f"Нужно проверить домашку! https://netology.ru/trainer/tasks  {str(r)}"

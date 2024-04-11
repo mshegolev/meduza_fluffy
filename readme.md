@@ -1,4 +1,7 @@
 ##### meduza_fluffy
+examples:
+https://github.com/python-telegram-bot/python-telegram-bot/blob/master/examples/timerbot.py
+
 how to install
 1. download project 
 
