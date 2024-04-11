@@ -28,6 +28,10 @@ class Config:
 
     def __init__(self, filename="config.json"):
         config_path = os.path.join(os.path.abspath("."), filename)
+        if os.path.isfile(config_path):
+            raise NameError("Установи конфиг")
+            exit(1)
+
         logger.info(f"загружаем конфиг {config_path}")
         # self.__dict__ = self.load(config_path)
         logger.debug(f"Конфиг загружен: {self.__dict__}")
@@ -61,6 +65,7 @@ class Config:
             config = json.load(f)
         return config
 
+
 async def send_ok(update, context):
     _rest_checked_value = 0
     frequency_min = 5 * ONE_MINUTE
@@ -85,7 +90,7 @@ async def send_ok(update, context):
             if _start_hw_state.get(WAITING_REVIEW) != r.get(WAITING_REVIEW):
                 msg = f"Данные в файле config.json: {_start_hw_state.get(WAITING_REVIEW)} не совпадают с данными в системе: {r.get(WAITING_REVIEW)}"
                 logger.info(msg)
-                HC.config.HW_STATE = r
+                HC.config.HW_STATE = r  # type: ignore  # noqa
                 HC.config.save()  # type: ignore  # noqa
                 frequency_min = frequency_min * 2 if frequency_min < max_frequency else 20
             else:
@@ -230,22 +235,14 @@ def sigterm_handler(signum, frame):
 
 
 def main():
-    signal.signal(signal.SIGTERM, sigterm_handler)
-    config = Config()
     global application
     global HC
-
-    if not config.get("TG_TOKEN") or not config.get("N_LOGIN"):
-        logger.error(f"Нет конфига для приложения: {config.config_path}")
-        exit(1)
-
-    application = Application.builder().token(config.get("TG_TOKEN")).build()
-
+    signal.signal(signal.SIGTERM, sigterm_handler)
+    config = Config()
+    application = Application.builder().token(config.get("TG_TOKEN")).build()  # type: ignore  # noqa
     HC = HomeChecker(config)  # type: ignore  # noqa
-
-    application.add_handler(CommandHandler("send_ok", send_ok))
-
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.add_handler(CommandHandler("send_ok", send_ok)) # type: ignore  # noqa
+    application.run_polling(allowed_updates=Update.ALL_TYPES) # type: ignore  # noqa
 
 
 if __name__ == "__main__":
