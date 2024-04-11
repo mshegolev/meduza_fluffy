@@ -3,8 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+rt.sh
 stopapp.sh
 config.json
+config.json.bkp
 *.log
 # C extensions
 *.so
